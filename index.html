@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CLI 極速記帳本</title>
+  <style>
+    :root { --primary: #2563eb; --bg: #f8fafc; --card-bg: #ffffff; --text: #0f172a; --text-muted: #64748b; --border: #e2e8f0; --accent-red: #ef4444; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; background: var(--bg); color: var(--text); padding: 20px 16px; max-width: 600px; margin: 0 auto; }
+    .card { background: var(--card-bg); border-radius: 12px; padding: 20px; border: 1px solid var(--border); margin-bottom: 20px; }
+    .cli-box { display: flex; gap: 8px; }
+    input[type="text"] { flex: 1; padding: 12px; border: 2px solid var(--border); border-radius: 8px; font-size: 1rem; }
+    button { padding: 12px 20px; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer; }
+    button.btn-danger { background: white; color: var(--accent-red); border: 1px solid var(--accent-red); margin-top: 10px; width: 100%; }
+    .hints { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; min-height: 28px; align-items: center; }
+    .hint-tag { font-size: 0.75rem; padding: 4px 8px; background: #f1f5f9; color: var(--text-muted); border-radius: 6px; cursor: pointer; user-select: none; }
+    .hint-tag:hover { background: #e2e8f0; color: var(--text); }
+    .hint-tag.active { background: #dbeafe; color: var(--primary); font-weight: bold; }
+    .preview-box { margin-top: 12px; padding: 10px; background: #f8fafc; border-left: 4px solid var(--border); }
+    .record-list { list-style: none; margin-top: 12px; }
+    .record-item { padding: 12px 0; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; }
+  </style>
+</head>
+<body>
+
+  <header style="text-align: center; margin-bottom: 20px;">
+    <h2>⚡ CLI 極速記帳本 v0.8</h2>
+  </header>
+
+  <div class="card">
+    <div class="cli-box">
+      <input type="text" id="cliInput" placeholder="輸入指令 (如: date 0901 fo bf 100)" autofocus />
+      <button onclick="processCommand()">記帳</button>
+    </div>
+    <div class="hints" id="hintsContainer"></div>
+    <div class="preview-box" id="previewBox"><span id="previewResult">等待輸入指令...</span></div>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary style="cursor:pointer; font-weight:600; color:var(--primary);">⚙️ GAS 設定</summary>
+      <input type="text" id="gasUrlInput" style="width:100%; margin-top:8px; padding:8px;" value="https://script.google.com/macros/s/AKfycbwhraC7lkpP8L1WQnePbwZkpetI_w6Sd8aDeCY49klFc77SrWN7oYMJZOz-XT_XYIpVEA/exec" placeholder="貼上 Web App URL" onchange="saveGasUrl()" />
+    </details>
+  </div>
+
+  <div class="card">
+    <div style="font-weight:600; margin-bottom:8px;">📋 最近記帳紀錄</div>
+    <ul class="record-list" id="recordList"></ul>
+    <button class="btn-danger" onclick="clearRecords()">🗑️ 清除本機舊紀錄</button>
+  </div>
+
+  <script>
+    // 預設的 Hardcoded GAS URL
+    const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbwhraC7lkpP8L1WQnePbwZkpetI_w6Sd8aDeCY49klFc77SrWN7oYMJZOz-XT_XYIpVEA/exec';
+
+    let categoryData = {}; 
+    const categoryMap = {}; 
+    const subCodeToMainMap = {}; 
+    const cliInput = document.getElementById('cliInput');
+    const previewResult = document.getElementById('previewResult');
+    const recordList = document.getElementById('recordList');
+    const gasUrlInput = document.getElementById('gasUrlInput');
+    const hintsContainer = document.getElementById('hintsContainer');
+
+    let records = JSON.parse(localStorage.getItem('cli_records') || '[]');
+    // 優先讀取 localStorage，若無則使用 Hardcoded 的預設網址
+    let gasUrl = localStorage.getItem('gas_url') || DEFAULT_GAS_URL;
+
+    window.onload = async () => {
+      gasUrlInput.value = gasUrl;
+      await loadCategories();
+      renderRecords();
+    };
+
+    function escapeHtml(str) {
+      return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+    }
+
+    async function loadCategories() {
+      try {
+        const response = await fetch('categories.json');
+        categoryData = await response.json();
+        
+        for (const [mainName, mainGroup] of Object.entries(categoryData)) {
+          const mainCode = mainGroup.code.toLowerCase();
+          categoryMap[mainCode] = { main: mainName, sub: '' };
+
+          if (mainGroup.subcategories) {
+            for (const [subName, subCode] of Object.entries(mainGroup.subcategories)) {
+              const subCodeLower = subCode.toLowerCase();
+              categoryMap[`${mainCode} ${subCodeLower}`] = { main: mainName, sub: subName };
+              
+              if (!categoryMap[subCodeLower]) {
+                categoryMap[subCodeLower] = { main: mainName, sub: subName };
+              }
+              subCodeToMainMap[subCodeLower] = mainCode;
+            }
+          }
+        }
+        renderHints();
+      } catch (err) {
+        console.error('無法讀取 categories.json', err);
+        previewResult.innerHTML = "<span style='color:red;'>⚠️ 分類檔載入失敗，請確認 categories.json 是否存在</span>";
+      }
+    }
+
+    function parseCLI(text) {
+      let parts = text.trim().split(/\s+/);
+      if (!parts[0]) return null;
+
+      let customDate = null;
+
+      // 解析 date 前綴指令 (例如: date 0901 或 date 20260901)
+      if (parts[0].toLowerCase() === 'date' && parts.length >= 2) {
+        const dateStr = parts[1];
+        let year = new Date().getFullYear();
+        let month = null;
+        let day = null;
+
+        if (/^\d{4}$/.test(dateStr)) { // MMDD 格式
+          month = parseInt(dateStr.substring(0, 2), 10) - 1;
+          day = parseInt(dateStr.substring(2, 4), 10);
+        } else if (/^\d{8}$/.test(dateStr)) { // YYYYMMDD 格式
+          year = parseInt(dateStr.substring(0, 4), 10);
+          month = parseInt(dateStr.substring(4, 6), 10) - 1;
+          day = parseInt(dateStr.substring(6, 8), 10);
+        }
+
+        if (month !== null && day !== null) {
+          const d = new Date(year, month, day);
+          if (!isNaN(d.getTime())) {
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            customDate = `${yyyy}/${mm}/${dd} 00:00:00`;
+          }
+        }
+
+        // 移除 date 及其日期參數，剩下後續記帳指令
+        parts = parts.slice(2);
+      }
+
+      if (parts.length === 0) {
+        return { customDate, isValid: false };
+      }
+
+      // 1. 三段式 (fo bf 100 蛋餅)
+      if (parts.length >= 3 && !isNaN(parts[2])) {
+        const key = `${parts[0].toLowerCase()} ${parts[1].toLowerCase()}`;
+        const mapped = categoryMap[key];
+        return {
+          mainCategory: mapped ? mapped.main : parts[0].toUpperCase(),
+          subCategory: mapped ? mapped.sub : parts[1].toUpperCase(),
+          amount: parseFloat(parts[2]),
+          note: parts.slice(3).join(' ') || '無備註',
+          customDate: customDate,
+          isValid: true
+        };
+      }
+
+      // 2. 兩段式 (fo 100 蛋餅 或 bf 100 蛋餅)
+      if (parts.length >= 2 && !isNaN(parts[1])) {
+        const key = parts[0].toLowerCase();
+        const mapped = categoryMap[key];
+        return {
+          mainCategory: mapped ? mapped.main : parts[0].toUpperCase(),
+          subCategory: mapped ? mapped.sub : '',
+          amount: parseFloat(parts[1]),
+          note: parts.slice(2).join(' ') || '無備註',
+          customDate: customDate,
+          isValid: true
+        };
+      }
+
+      // 3. 輸入中語法匹配
+      const key2 = parts.length >= 2 ? `${parts[0].toLowerCase()} ${parts[1].toLowerCase()}` : parts[0].toLowerCase();
+      const mapped = categoryMap[key2] || categoryMap[parts[0].toLowerCase()];
+      if (mapped) {
+        return {
+          mainCategory: mapped.main,
+          subCategory: mapped.sub,
+          amount: null,
+          note: '',
+          customDate: customDate,
+          isValid: false
+        };
+      }
+
+      return null;
+    }
+
+    function renderHints() {
+      hintsContainer.innerHTML = '';
+      let text = cliInput.value.trim();
+
+      // 提取 date 前綴，確保點擊快捷提示時保留 date 前綴
+      let datePrefix = "";
+      const matchDate = text.match(/^date\s+\d+\s*/i);
+      if (matchDate) {
+        datePrefix = matchDate[0];
+        text = text.substring(datePrefix.length).trim();
+      }
+
+      const parts = text.split(/\s+/);
+      const firstWord = parts[0] ? parts[0].toLowerCase() : '';
+
+      const parsed = parseCLI(cliInput.value);
+      if (parsed && parsed.isValid) {
+        const infoSpan = document.createElement('span');
+        infoSpan.style.cssText = "font-size:0.8rem; color:#16a34a; font-weight:600;";
+        const dateTag = parsed.customDate ? ` [指定日期: ${parsed.customDate.split(' ')[0]}]` : '';
+        infoSpan.textContent = `✓ 指令完整${dateTag}，按下 Enter 或點擊「記帳」即可儲存`;
+        hintsContainer.appendChild(infoSpan);
+        return;
+      }
+
+      let mainCodeToLookup = firstWord;
+      if (subCodeToMainMap[firstWord]) {
+        mainCodeToLookup = subCodeToMainMap[firstWord];
+      }
+
+      let matchedMainGroup = null;
+      let matchedMainCode = '';
+      let matchedMainName = '';
+
+      for (const [mainName, mainGroup] of Object.entries(categoryData)) {
+        if (mainGroup.code.toLowerCase() === mainCodeToLookup) {
+          matchedMainGroup = mainGroup;
+          matchedMainCode = mainGroup.code.toLowerCase();
+          matchedMainName = mainName;
+          break;
+        }
+      }
+
+      if (matchedMainGroup && matchedMainGroup.subcategories) {
+        const backSpan = document.createElement('span');
+        backSpan.className = 'hint-tag';
+        backSpan.textContent = `⬅️ 所有分類`;
+        backSpan.onclick = () => {
+          cliInput.value = datePrefix;
+          cliInput.focus();
+          onInputChange();
+        };
+        hintsContainer.appendChild(backSpan);
+
+        const currentMainSpan = document.createElement('span');
+        currentMainSpan.className = 'hint-tag active';
+        currentMainSpan.textContent = `📍 ${matchedMainCode} ${matchedMainName}`;
+        hintsContainer.appendChild(currentMainSpan);
+
+        for (const [subName, subCode] of Object.entries(matchedMainGroup.subcategories)) {
+          const subCodeLower = subCode.toLowerCase();
+          const hintSpan = document.createElement('span');
+          hintSpan.className = 'hint-tag';
+          hintSpan.textContent = `${subCodeLower} ${subName}`;
+          
+          hintSpan.onclick = () => {
+            cliInput.value = `${datePrefix}${matchedMainCode} ${subCodeLower} `;
+            cliInput.focus();
+            onInputChange();
+          };
+          hintsContainer.appendChild(hintSpan);
+        }
+      } else {
+        for (const [mainName, mainGroup] of Object.entries(categoryData)) {
+          const mainCode = mainGroup.code.toLowerCase();
+          const hintSpan = document.createElement('span');
+          hintSpan.className = 'hint-tag';
+          hintSpan.textContent = `${mainCode} ${mainName}`;
+          
+          hintSpan.onclick = () => {
+            cliInput.value = `${datePrefix}${mainCode} `;
+            cliInput.focus();
+            onInputChange();
+          };
+          hintsContainer.appendChild(hintSpan);
+        }
+      }
+    }
+
+    function updatePreview() {
+      const text = cliInput.value.trim();
+      if (!text) {
+        previewResult.innerHTML = "等待輸入指令...";
+        return;
+      }
+
+      const parsed = parseCLI(text);
+      if (parsed) {
+        const datePrefixDisplay = parsed.customDate 
+          ? `<span style="color:var(--primary); font-weight:bold;">[📅 ${parsed.customDate.split(' ')[0]}]</span> ` 
+          : '';
+
+        if (parsed.isValid) {
+          const catTag = escapeHtml(parsed.subCategory ? `${parsed.mainCategory} ${parsed.subCategory}` : parsed.mainCategory);
+          const safeNote = escapeHtml(parsed.note);
+          previewResult.innerHTML = `${datePrefixDisplay}<strong>${catTag}</strong> $${parsed.amount} (${safeNote})`;
+        } else if (parsed.mainCategory) {
+          const catTag = escapeHtml(parsed.subCategory ? `${parsed.mainCategory} ${parsed.subCategory}` : parsed.mainCategory);
+          previewResult.innerHTML = `${datePrefixDisplay}<strong>${catTag}</strong> <span style="color:var(--text-muted);">(請繼續輸入金額，例如: 100)</span>`;
+        } else {
+          previewResult.innerHTML = `${datePrefixDisplay}<span style='color:var(--text-muted);'>等待輸入合法記帳指令...</span>`;
+        }
+      } else {
+        previewResult.innerHTML = "<span style='color:var(--text-muted);'>等待輸入合法格式...</span>";
+      }
+    }
+
+    function onInputChange() {
+      updatePreview();
+      renderHints();
+    }
+
+    cliInput.addEventListener('input', onInputChange);
+    cliInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') processCommand(); });
+
+    function processCommand() {
+      const parsed = parseCLI(cliInput.value);
+      if (!parsed || !parsed.isValid) return;
+
+      const record = {
+        id: Date.now(),
+        timestamp: parsed.customDate || new Date().toLocaleString('zh-TW', { hour12: false }),
+        mainCategory: parsed.mainCategory,
+        subCategory: parsed.subCategory,
+        amount: parsed.amount,
+        note: parsed.note
+      };
+
+      records.unshift(record);
+      localStorage.setItem('cli_records', JSON.stringify(records));
+      renderRecords();
+
+      if (gasUrl) {
+        fetch(gasUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(record)
+        });
+      }
+      cliInput.value = '';
+      onInputChange();
+    }
+
+    function saveGasUrl() {
+      gasUrl = gasUrlInput.value.trim() || DEFAULT_GAS_URL;
+      localStorage.setItem('gas_url', gasUrl);
+    }
+
+    function renderRecords() {
+      recordList.innerHTML = records.map(item => {
+        const catDisplay = escapeHtml(item.subCategory ? `${item.mainCategory} ${item.subCategory}` : item.mainCategory);
+        const safeNote = escapeHtml(item.note);
+        return `<li class="record-item">
+          <div><strong>${catDisplay}</strong> ${safeNote}<br><small>${item.timestamp}</small></div>
+          <strong>$${item.amount}</strong>
+        </li>`;
+      }).join('');
+    }
+
+    function clearRecords() {
+      if(confirm('確定要清除畫面上所有的舊紀錄嗎？(不會影響 Google Sheet 的資料)')) {
+        records = [];
+        localStorage.removeItem('cli_records');
+        renderRecords();
+      }
+    }
+  </script>
+</body>
+</html>
