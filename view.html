@@ -1,1 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>記帳資料檢視表</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 0 20px;
+      background-color: #f8f9fa;
+      color: #333;
+    }
 
+    h2 {
+      text-align: center;
+      color: #2c3e50;
+      margin-bottom: 20px;
+    }
+
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+
+    button {
+      padding: 8px 16px;
+      font-size: 14px;
+      background-color: #007bff;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    #status {
+      font-size: 14px;
+      color: #6c757d;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #ffffff;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    th, td {
+      padding: 12px 15px;
+      text-align: left;
+      border-bottom: 1px solid #dee2e6;
+    }
+
+    th {
+      background-color: #343a40;
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    tr:hover {
+      background-color: #f1f3f5;
+    }
+
+    .amount {
+      font-weight: bold;
+      color: #28a745;
+    }
+
+    .no-data {
+      text-align: center;
+      padding: 20px;
+      color: #888;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>記帳資料檢視表</h2>
+
+  <div class="toolbar">
+    <button onclick="fetchData()">🔄 重新整理</button>
+    <span id="status">準備載入...</span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>時間</th>
+        <th>主科目</th>
+        <th>次科目</th>
+        <th>金額</th>
+        <th>備註</th>
+        <th>人員</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody">
+      <tr>
+        <td colspan="6" class="no-data">載入中...</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <script>
+    // ⚠️ 請替換為您部署的 Google Apps Script 網頁應用程式 URL
+    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxXqPRbu3Bm8NWt0h5LUWPun7xmdU5EcdVMOkUc8tC8_MZ0sw3_6LljAns9SwzC2SwXjA/exec";
+
+    async function fetchData() {
+      const statusEl = document.getElementById("status");
+      const tableBody = document.getElementById("tableBody");
+
+      statusEl.textContent = "正在取得資料...";
+      tableBody.innerHTML = '<tr><td colspan="6" class="no-data">載入中...</td></tr>';
+
+      try {
+        // 呼叫 GAS 的 doGet(e)
+        const response = await fetch(GAS_WEB_APP_URL);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP 錯誤，狀態碼：${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (Array.isArray(data) && data.length > 0) {
+          tableBody.innerHTML = ""; // 清空表格
+
+          data.forEach(item => {
+            const row = document.createElement("tr");
+
+            row.innerHTML = `
+              <td>${item["時間"] || "-"}</td>
+              <td>${item["主科目"] || "-"}</td>
+              <td>${item["次科目"] || "-"}</td>
+              <td class="amount">${item["金額"] !== undefined ? Number(item["金額"]).toLocaleString() : "-"}</td>
+              <td>${item["備註"] || "-"}</td>
+              <td>${item["人員"] || "-"}</td>
+            `;
+
+            tableBody.appendChild(row);
+          });
+
+          statusEl.textContent = `成功更新！共 ${data.length} 筆資料（更新時間：${new Date().toLocaleTimeString()}）`;
+        } else {
+          tableBody.innerHTML = '<tr><td colspan="6" class="no-data">目前沒有任何記帳資料</td></tr>';
+          statusEl.textContent = "更新完成，無資料。";
+        }
+
+      } catch (error) {
+        console.error("讀取失敗:", error);
+        tableBody.innerHTML = `<tr><td colspan="6" class="no-data" style="color: red;">資料讀取失敗: ${error.message}</td></tr>`;
+        statusEl.textContent = "讀取失敗，請檢查網址或權限設定。";
+      }
+    }
+
+    // 頁面載入完成後自動取得一次資料
+    window.onload = fetchData;
+  </script>
+
+</body>
+</html>
