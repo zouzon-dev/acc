@@ -40,7 +40,7 @@
   <div class="card">
     <details>
       <summary style="cursor:pointer; font-weight:600; color:var(--primary);">⚙️ GAS 設定</summary>
-      <input type="text" id="gasUrlInput" style="width:100%; margin-top:8px; padding:8px;" value="https://script.google.com/macros/s/AKfycbxXqPRbu3Bm8NWt0h5LUWPun7xmdU5EcdVMOkUc8tC8_MZ0sw3_6LljAns9SwzC2SwXjA/exec" placeholder="貼上 Web App URL" onchange="saveGasUrl()" />
+      <input type="text" id="gasUrlInput" style="width:100%; margin-top:8px; padding:8px;" value="https://script.google.com/macros/s/AKfycbxXqPRbu3Bm8NWt0h5LUWPun7xmdU5EcdVMOkUc8tC8_MZ0sw3_6LljAns[...]" />
     </details>
   </div>
 
@@ -74,7 +74,7 @@
     };
 
     function escapeHtml(str) {
-      return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+      return str.replace(/[&<>\"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
     }
 
     async function loadCategories() {
@@ -316,6 +316,15 @@
     cliInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') processCommand(); });
 
     function processCommand() {
+      // 新增：如果第一個字為 view，導向 view.html
+      const raw = cliInput.value.trim();
+      const firstWord = raw.split(/\s+/)[0] ? raw.split(/\s+/)[0].toLowerCase() : '';
+      if (firstWord === 'view') {
+        // 使用同一個視窗導向 view.html；若要在新分頁開啟請改用 window.open('view.html', '_blank')
+        window.location.href = 'view.html';
+        return;
+      }
+
       const parsed = parseCLI(cliInput.value);
       if (!parsed || !parsed.isValid) return;
 
