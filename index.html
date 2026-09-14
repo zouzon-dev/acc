@@ -40,7 +40,7 @@
   <div class="card">
     <details>
       <summary style="cursor:pointer; font-weight:600; color:var(--primary);">⚙️ GAS 設定</summary>
-      <input type="text" id="gasUrlInput" style="width:100%; margin-top:8px; padding:8px;" value="https://script.google.com/macros/s/AKfycbxXqPRbu3Bm8NWt0h5LUWPun7xmdU5EcdVMOkUc8tC8_MZ0sw3_6LljAns[...]" />
+      <input type="text" id="gasUrlInput" style="width:100%; margin-top:8px; padding:8px;" value="https://script.google.com/macros/s/AKfycbxXqPRbu3Bm8NWt0h5LUWPun7xmdU5EcdVMOkUc8tC8_MZ0sw3_6LljAns[...]
     </details>
   </div>
 
@@ -105,6 +105,20 @@
       }
     }
 
+    // ✨ 新增：解析金額的函數（支持運算）
+    function parseAmount(str) {
+      // 檢查是否為有效的數學運算式 (只允許數字、+、-、*、/、括號)
+      if (/^[\d+\-*/()\s.]+$/.test(str)) {
+        try {
+          const result = eval(str);
+          return typeof result === 'number' && !isNaN(result) ? result : null;
+        } catch (e) {
+          return null;
+        }
+      }
+      return null;
+    }
+
     function parseCLI(text) {
       let parts = text.trim().split(/\s+/);
       if (!parts[0]) return null;
@@ -145,32 +159,38 @@
         return { customDate, isValid: false };
       }
 
-      // 1. 三段式 (fo bf 100 蛋餅)
-      if (parts.length >= 3 && !isNaN(parts[2])) {
-        const key = `${parts[0].toLowerCase()} ${parts[1].toLowerCase()}`;
-        const mapped = categoryMap[key];
-        return {
-          mainCategory: mapped ? mapped.main : parts[0].toUpperCase(),
-          subCategory: mapped ? mapped.sub : parts[1].toUpperCase(),
-          amount: parseFloat(parts[2]),
-          note: parts.slice(3).join(' ') || '無備註',
-          customDate: customDate,
-          isValid: true
-        };
+      // 1. 三段式 (fo bf 100 蛋餅 或 fo bf 75*2 蛋餅)
+      if (parts.length >= 3) {
+        const amountValue = parseAmount(parts[2]);
+        if (amountValue !== null) {
+          const key = `${parts[0].toLowerCase()} ${parts[1].toLowerCase()}`;
+          const mapped = categoryMap[key];
+          return {
+            mainCategory: mapped ? mapped.main : parts[0].toUpperCase(),
+            subCategory: mapped ? mapped.sub : parts[1].toUpperCase(),
+            amount: amountValue,
+            note: parts.slice(3).join(' ') || '無備註',
+            customDate: customDate,
+            isValid: true
+          };
+        }
       }
 
-      // 2. 兩段式 (fo 100 蛋餅 或 bf 100 蛋餅)
-      if (parts.length >= 2 && !isNaN(parts[1])) {
-        const key = parts[0].toLowerCase();
-        const mapped = categoryMap[key];
-        return {
-          mainCategory: mapped ? mapped.main : parts[0].toUpperCase(),
-          subCategory: mapped ? mapped.sub : '',
-          amount: parseFloat(parts[1]),
-          note: parts.slice(2).join(' ') || '無備註',
-          customDate: customDate,
-          isValid: true
-        };
+      // 2. 兩段式 (fo 100 蛋餅 或 fo 75*2 蛋餅)
+      if (parts.length >= 2) {
+        const amountValue = parseAmount(parts[1]);
+        if (amountValue !== null) {
+          const key = parts[0].toLowerCase();
+          const mapped = categoryMap[key];
+          return {
+            mainCategory: mapped ? mapped.main : parts[0].toUpperCase(),
+            subCategory: mapped ? mapped.sub : '',
+            amount: amountValue,
+            note: parts.slice(2).join(' ') || '無備註',
+            customDate: customDate,
+            isValid: true
+          };
+        }
       }
 
       // 3. 輸入中語法匹配
