@@ -19,13 +19,50 @@
     .hint-tag.active { background: #dbeafe; color: var(--primary); font-weight: bold; }
     .preview-box { margin-top: 12px; padding: 10px; background: #f8fafc; border-left: 4px solid var(--border); }
     .record-list { list-style: none; margin-top: 12px; }
-    .record-item { padding: 12px 0; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; }
+    .record-item { 
+      padding: 12px 0; 
+      border-bottom: 1px solid var(--border); 
+      display: flex; 
+      justify-content: space-between;
+      animation: slideIn 0.3s ease-out;
+    }
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    .success-toast {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #16a34a;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      animation: slideInRight 0.3s ease-out;
+      z-index: 1000;
+    }
+    @keyframes slideInRight {
+      from {
+        opacity: 0;
+        transform: translateX(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
   </style>
 </head>
 <body>
 
   <header style="text-align: center; margin-bottom: 20px;">
-    <h2>⚡ CLI 極速記帳本 v0.8</h2>
+    <h2>⚡ CLI 極速記帳本 v0.9</h2>
   </header>
 
   <div class="card">
@@ -335,6 +372,19 @@
     cliInput.addEventListener('input', onInputChange);
     cliInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') processCommand(); });
 
+    // ✨ v0.9 新增：成功提示函數
+    function showSuccessToast(message) {
+      const toast = document.createElement('div');
+      toast.className = 'success-toast';
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      
+      setTimeout(() => {
+        toast.style.animation = 'slideInRight 0.3s ease-out reverse';
+        setTimeout(() => toast.remove(), 300);
+      }, 2000);
+    }
+
     function processCommand() {
       // 新增：如果第一個字為 view，導向 view.html
       const raw = cliInput.value.trim();
@@ -369,8 +419,18 @@
           body: JSON.stringify(record)
         });
       }
+      
+      // ✨ v0.9 新增：顯示成功提示
+      const catDisplay = record.subCategory ? `${record.mainCategory} ${record.subCategory}` : record.mainCategory;
+      showSuccessToast(`✓ 已記帳: ${catDisplay} $${record.amount}`);
+      
       cliInput.value = '';
       onInputChange();
+      
+      // ✨ v0.9 新增：自動滾動到列表
+      setTimeout(() => {
+        recordList.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 300);
     }
 
     function saveGasUrl() {
